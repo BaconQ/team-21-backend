@@ -69,7 +69,7 @@ class StatusChange(BaseModel):
 
 class PetResponse(BaseModel):
     """Response model for pet interactions"""
-    message: str
+    messages: List[str]  # Array of chat messages
     status: Dict[str, int]  # Contains food, water, energy, happiness
     status_change: Dict[str, int]  # Contains changes to food, water, energy, happiness
     changes: List[StatusChange]
@@ -113,26 +113,28 @@ async def interact_with_pet(action: PetAction) -> PetResponse:
 
         Based on the user's input, you should:
         1. Respond naturally and conversationally, showing genuine emotion and personality
-        2. Speak like an intelligent, well-spoken being
+        2. Break your response into 1-3 natural chat messages that flow like a text conversation between friends. DO NOT include any emojis or other special characters.
         3. Subtly suggest healthier habits to the user
-        4. Decide how this interaction affects the pet's status values - you can change multiple attributes
+        4. Decide how this interaction affects the pet's status values - you can change multiple attributes or none at all. Attempt to mirror the affects that the user would experience in real life.
+        
         
         IMPORTANT: Your response MUST be valid JSON in this exact format:
         {
-            "message": "Your response as the pet, showing personality and emotion",
-            "changes": [
-                {
-                    "attribute": "attribute_name",  // REQUIRED: must be one of: food, water, energy, happiness
-                    "value": change_value,         // REQUIRED: must be between -20 and +20
-                }
-            ]
+            "messages": [
+                "First message in the conversation",
+                "OPTIONAL: second messages",
+                "OPTIONAL: third messages"
+            ] // Array can be 1, 2, or 3 messages in lenght,
+            "changes": []  // Array can be empty if no attributes need to change
         }
         
         CRITICAL FORMAT REQUIREMENTS:
-        1. Each change in the changes array MUST include BOTH fields: attribute, value
-        2. The "attribute" field MUST be one of: food, water, energy, happiness
-        3. The "value" field MUST be a number between -20 and +20
-        4. DO NOT skip or omit any of these fields in any change object
+        1. The "messages" array MUST contain at least 1 message. If the most natural response is a single message, the array should only contain 1 message. However, the array can contain 2 or 3 messages if the response flows more naturally in that format.
+        2. Each message should be a natural continuation of the conversation
+        3. The "changes" array can be empty if no attributes need to change
+        4. If you do include changes, each change MUST include both fields: attribute and value
+        5. The "attribute" field MUST be one of: food, water, energy, happiness
+        6. The "value" field MUST be a number between -20 and +20
         
         Remember to stay in character and be consistent in your personality!
         """
@@ -158,19 +160,20 @@ async def interact_with_pet(action: PetAction) -> PetResponse:
             old_status = pet.get_status()
             new_status = old_status.copy()
             
-            # Apply each change sequentially
-            for change in response_content["changes"]:
-                try:
-                    print(f"Applying change: {change}")  # Debug log
-                    new_status = pet.update_status(
-                        change["attribute"],
-                        change["value"]
-                    )
-                except Exception as e:
-                    print(f"Error applying change: {e}")
-                    continue
+            # Apply each change sequentially if there are any changes
+            if response_content["changes"]:
+                for change in response_content["changes"]:
+                    try:
+                        print(f"Applying change: {change}")  # Debug log
+                        new_status = pet.update_status(
+                            change["attribute"],
+                            change["value"]
+                        )
+                    except Exception as e:
+                        print(f"Error applying change: {e}")
+                        continue
             
-            # Calculate status change
+            # Calculate status change (will be empty if no changes were made)
             status_change = {
                 attr: new_status[attr] - old_status[attr]
                 for attr in old_status
@@ -181,13 +184,13 @@ async def interact_with_pet(action: PetAction) -> PetResponse:
             # Record the interaction
             pet.add_interaction(
                 action.prompt,
-                response_content["message"],
+                "\n".join(response_content["messages"]),  # Join messages with newlines for storage
                 status_change,
                 response_content["changes"]
             )
             
             return PetResponse(
-                message=response_content["message"],
+                messages=response_content["messages"],  # Return the array of messages directly
                 status=new_status,
                 status_change=status_change,
                 changes=response_content["changes"]
